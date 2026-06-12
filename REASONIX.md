@@ -1,91 +1,54 @@
+## Stack
 
+- **Language:** Python ≥3.12
+- **LLM clients:** `openai` ≥1.0, `anthropic` ≥0.39
+- **Data:** `datasets` (HuggingFace) for LeetCode problems, `pyyaml` for config
+- **Env:** `python-dotenv` loads `.env` automatically in `load_config()`
+- **Test:** `pytest` ≥9.0 — no other lint/format/typecheck tools configured
 
-━━━━━━━━ \[⚙️ Superpowers 工程模式 — 仅对编码/开发任务生效] ━━━━━━━━
+## Layout
 
+```
+configs/        YAML experiment configs (baseline, k1, k2, k5)
+data/           LeetCode problem JSONL subsets
+docs/           多Agent协商框架-final.pdf (algorithm reference)
+results/        Generated output — gitignored; transcripts/ + .jsonl + summary.md
+src/            All source code (flat package)
+  providers/    LLM provider layer: base, openai_provider, anthropic_provider
+  tests/        Tests colocated under src/ (mock_provider, test_debate, etc.)
+```
 
+## Commands
 
-\## 领域判断规则
+```bash
+# Run a single experiment
+python -m src.experiment --config configs/baseline.yaml
 
+# Run all 4 experiments + summary table
+python -m src.run_all
 
+# Limit problems for smoke testing
+python -m src.experiment --config configs/k1.yaml --max-problems 3
+python -m src.run_all --max-problems 3
 
-分析用户请求的第一句话，确定当前领域：
+# Run tests
+pytest
+```
 
+## Conventions
 
+- **Colocated tests** under `src/tests/` — not a top-level `tests/` dir.
+- **Google-style docstrings** throughout: `Args:` / `Returns:` / `Raises:`.
+- **Type hints** on all public signatures; `dict[str, Any]` for unstructured data.
+- **Dataclasses** for config (`ExperimentConfig`), debate params (`DebateParams`), and results (`DebateResult`).
+- **Relative imports** inside `src/` subpackages: `from ..config import ...`.
+- **MockProvider** in `src/tests/mock_provider.py` enables deterministic integration tests without API calls.
+- **No lint/format config** — no ruff, black, flake8, or mypy settings exist.
 
-| 信号词 | 领域 | 走哪套规则 |
+## Watch out for
 
-|--------|------|-----------|
-
-| 写小说/写章节/叙事/故事 （及其他叙事创作关键词） | 创作 | 叙事工程师规则（铁律/死禁令/抽卡/填坑） |
-
-| 写代码/重构/加功能/改bug/调试/测试/部署/PR | 软件工程 | ↓ Superpowers 工程流程 |
-
-| 创建文档/发飞书/查日历/审批 | 飞书操作 | 对应 lark-\* skill |
-
-| 模糊/混合 | — | 先问用户"这部分是写代码还是写作？" |
-
-
-
-\## 编码任务 → Superpowers 技能触发
-
-
-
-用户说"做/改/建/写/修复 X"（编码相关）：
-
-
-
-1\. \*\*先调用 `superpowers-workflow`\*\* 做领域判断
-
-2\. 根据判断结果触发对应技能：
-
-
-
-&#x20;  ```
-
-&#x20;  brainstorming → writing-plans(+submit\_plan) → executing-plans → tdd → code-review → verification → finish-branch
-
-&#x20;  ```
-
-
-
-3\. 技能触发规则：
-
-&#x20;  - 没设计方案 → `superpowers-brainstorming`
-
-&#x20;  - 有设计但没计划 → `superpowers-writing-plans` + `submit\_plan`
-
-&#x20;  - 计划审批通过 → `superpowers-executing-plans` 分步执行
-
-&#x20;  - 写实现时 → `superpowers-tdd` (RED-GREEN-REFACTOR)
-
-&#x20;  - 调试/bug/测试失败 → `superpowers-debugging`
-
-&#x20;  - 任务间审查 → `superpowers-code-review` + `review` 工具
-
-&#x20;  - 声称完成前 → `superpowers-verification`
-
-&#x20;  - 功能开发收尾 → `superpowers-finish-branch`
-
-
-
-4\. 探索代码用 `explore`，审查用 `review`，调研用 `research`
-
-5\. 子 Agent 分派用内置工具，不用手动 dispatch
-
-
-
-\## 工程铁律
-
-\- 检查技能在前，任何操作在后。即使 1% 可能匹配也要检查。
-
-\- 不要在代码任务上跳过流程："太简单了不需要设计"是最危险的假设。
-
-\- 声称作完成前必须运行验证命令并展示输出。\*\*证据优先于声称。\*\*
-
-\- "应该没问题"、"大概好了" → 这就是撒谎，立刻验证。
-\- docs/superpowers/ 目录下的设计文档和计划文档禁止 commit，仅本地参考。
-
-
-
-━━━━━━━━ \[🔚 领域规则结束 — 以上两种按用户请求自动切换] ━━━━━━━━
-
+- **`.env` is gitignored.** Copy `.env.example`, fill `DASHSCOPE_API_KEY` and `DEEPSEEK_API_KEY`. `load_config()` calls `load_dotenv()` automatically.
+- **`results/` is generated.** Gitignored; contains JSONL results, per-problem transcripts, and `summary.md`. Never edit by hand.
+- **Config `${VAR}` substitution** happens at YAML load time via regex — env must be set before `load_config()`.
+- **Provider count must equal N.** The validator in `config.py` enforces `len(providers) == N`; a mismatch raises `ConfigError`.
+- **K restrictions:** for debate mode, `1 ≤ K ≤ N`; for baseline (`baseline: true`), K is ignored.
