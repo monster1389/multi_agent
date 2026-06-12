@@ -26,6 +26,7 @@ class DebateResult:
     winner_solution: Solution
     rounds: int                          # debate rounds (not counting initial gen)
     total_llm_calls: int                 # includes initial generation
+    transcript: list[dict] = field(default_factory=list)  # full interaction log
     history: list[dict] = field(default_factory=list)
     terminated_early: bool = False       # True if convergence before N-1 rounds
 
@@ -64,6 +65,7 @@ class DebateEngine:
         self.K = K
         self.params = params or DebateParams()
         self._llm_calls = 0
+        self._transcript: list[dict] = []
 
     # ------------------------------------------------------------------
     # Public API
@@ -83,12 +85,20 @@ class DebateEngine:
         history: list[dict] = []
 
         # --- Step 1: Initial solution generation (N LLM calls) ---
+        round0_agents: dict[str, dict] = {}
         for agent in self.agents:
             agent.weight = 1.0 / N
             agent.cumulative_gamma = 0.0
             agent.alive = True
-            generate_initial_solution(agent, problem)
+            sol, prompt, response = generate_initial_solution(agent, problem)
+            round0_agents[str(agent.id)] = {
+                "provider": agent.provider.model_name,
+                "code": sol.code,
+                "prompt": prompt,
+                "response": response,
+            }
             self._llm_calls += 1
+        self._transcript.append({"round": 0, "phase": "initial", "agents": round0_agents})
 
         round_num = 0
         N_alive = N
@@ -119,6 +129,7 @@ class DebateEngine:
             winner_solution=winner.current_solution,  # type: ignore[arg-type]
             rounds=round_num,
             total_llm_calls=self._llm_calls,
+            transcript=self._transcript,
             history=history,
             terminated_early=round_num < N - 1,
         )
@@ -137,17 +148,26 @@ class DebateEngine:
         """One round of Phase 1: refine → vote Top-K → score → eliminate."""
         # --- 1. Refine: each agent improves its solution ---
         solutions = {a.id: a.current_solution for a in alive if a.current_solution}
+        weights_before = {str(a.id): round(a.weight, 4) for a in alive}
+        refine_data: dict[str, dict] = {}
         for agent in alive:
-            refine_solution(agent, problem, solutions)
+            sol, prompt, response = refine_solution(agent, problem, solutions)
+            refine_data[str(agent.id)] = {
+                "code": sol.code, "prompt": prompt, "response": response
+            }
             self._llm_calls += 1
 
         # --- 2. Vote Top-K ---
-        # Rebuild solution map after refine
         solutions = {a.id: a.current_solution for a in alive if a.current_solution}
-        votes: dict[int, list[int]] = {}  # agent_id → ranked list of voted agent_ids
+        votes: dict[int, list[int]] = {}
+        vote_data: dict[str, dict] = {}
         for agent in alive:
-            voted = vote(agent, problem, solutions, self.K, my_index=agent.id)
+            voted, prompt, response = vote(agent, problem, solutions, self.K, my_index=agent.id)
             votes[agent.id] = voted
+            vote_data[str(agent.id)] = {
+                "voted_for": voted, "raw_response": response,
+                "prompt": prompt, "response": response,
+            }
             self._llm_calls += 1
 
         # --- 3. Weighted scoring ---
@@ -165,10 +185,23 @@ class DebateEngine:
             agent.cumulative_gamma += C
 
         self._update_weights_phase1(alive, consistency)
+        weights_after = {str(a.id): round(a.weight, 4) for a in alive}
 
         # --- 6. Deterministic elimination ---
         eliminated = self._eliminate_lowest_weight(alive)
         eliminated.alive = False
+
+        self._transcript.append({
+            "round": round_num,
+            "phase": "elimination",
+            "refine": refine_data,
+            "vote": vote_data,
+            "scores": {str(k): round(v, 4) for k, v in scores.items()},
+            "consistency": {str(k): round(v, 4) for k, v in consistency.items()},
+            "weights_before": weights_before,
+            "weights_after": weights_after,
+            "eliminated": {"agent_id": eliminated.id, "reason": "lowest_weight"},
+        })
 
         history.append({
             "round": round_num,
@@ -196,25 +229,45 @@ class DebateEngine:
         """
         # --- 1. Refine ---
         solutions = {a.id: a.current_solution for a in alive if a.current_solution}
+        refine_data: dict[str, dict] = {}
         for agent in alive:
-            refine_solution(agent, problem, solutions)
+            sol, prompt, response = refine_solution(agent, problem, solutions)
+            refine_data[str(agent.id)] = {
+                "code": sol.code, "prompt": prompt, "response": response
+            }
             self._llm_calls += 1
 
         # --- 2. Vote Best-1 ---
         solutions = {a.id: a.current_solution for a in alive if a.current_solution}
-        best_votes: dict[int, int] = {}  # voter_id → voted_agent_id
+        best_votes: dict[int, int] = {}
+        vote_data: dict[str, dict] = {}
         for agent in alive:
-            voted_list = vote(agent, problem, solutions, K=1, my_index=agent.id)
+            voted_list, prompt, response = vote(agent, problem, solutions, K=1, my_index=agent.id)
             if voted_list:
                 best_votes[agent.id] = voted_list[0]
+            vote_data[str(agent.id)] = {
+                "voted_for": voted_list, "raw_response": response,
+                "prompt": prompt, "response": response,
+            }
             self._llm_calls += 1
 
         # --- 3. Weight absorption ---
         self._weight_absorption(alive, best_votes)
+        weights_absorbed = {str(a.id): round(a.weight, 4) for a in alive}
 
         # --- 4. Termination check: any agent > 50%? ---
         for agent in alive:
             if agent.weight > 0.5:
+                self._transcript.append({
+                    "round": round_num,
+                    "phase": "endgame",
+                    "refine": refine_data,
+                    "vote": vote_data,
+                    "best_votes": {str(k): v for k, v in best_votes.items()},
+                    "weights_after_absorption": weights_absorbed,
+                    "terminated": True,
+                    "winner": {"agent_id": agent.id, "mechanism": "weight_threshold"},
+                })
                 history.append({
                     "round": round_num,
                     "phase": "endgame",
@@ -227,6 +280,16 @@ class DebateEngine:
 
         # --- 5. Graph deadlock break ---
         if len(alive) == 1:
+            self._transcript.append({
+                "round": round_num,
+                "phase": "endgame",
+                "refine": refine_data,
+                "vote": vote_data,
+                "best_votes": {str(k): v for k, v in best_votes.items()},
+                "weights_after_absorption": weights_absorbed,
+                "terminated": True,
+                "winner": {"agent_id": alive[0].id, "mechanism": "last_standing"},
+            })
             return True
 
         eliminated_id = self._graph_deadlock_break(alive, best_votes)
@@ -234,6 +297,17 @@ class DebateEngine:
             if agent.id == eliminated_id:
                 agent.alive = False
                 break
+
+        self._transcript.append({
+            "round": round_num,
+            "phase": "endgame",
+            "refine": refine_data,
+            "vote": vote_data,
+            "best_votes": {str(k): v for k, v in best_votes.items()},
+            "weights_after_absorption": weights_absorbed,
+            "terminated": False,
+            "eliminated": {"agent_id": eliminated_id, "reason": "graph_break"},
+        })
 
         history.append({
             "round": round_num,

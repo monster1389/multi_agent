@@ -129,7 +129,7 @@ Output ONLY the index as a single integer, e.g.: 2"""
 def generate_initial_solution(
     agent: Agent,
     problem: dict,
-) -> Solution:
+) -> tuple[Solution, dict[str, str], str]:
     """Generate the initial solution for a problem.
 
     Args:
@@ -138,7 +138,9 @@ def generate_initial_solution(
                  'function_signature'.
 
     Returns:
-        A Solution with generation_round=0.
+        (Solution, prompt_dict, response_text)
+        prompt_dict = {"system": ..., "user": ...}
+        response_text = raw LLM output
     """
     sig = problem.get("function_signature", "solution(self, ...)")
     system = INITIAL_SOLUTION_SYSTEM.format(method_signature=sig)
@@ -148,19 +150,19 @@ def generate_initial_solution(
         description=problem.get("description", ""),
         constraints=problem.get("constraints", ""),
     )
-    code = agent.provider.generate(system, user)
-    # Strip markdown fences if present
-    code = _strip_code_fences(code)
+    response_raw = agent.provider.generate(system, user)
+    code = _strip_code_fences(response_raw)
     solution = Solution(code=code, generation_round=0)
     agent.current_solution = solution
-    return solution
+    prompt = {"system": system, "user": user}
+    return solution, prompt, response_raw
 
 
 def refine_solution(
     agent: Agent,
     problem: dict,
     all_solutions: dict[int, Solution],
-) -> Solution:
+) -> tuple[Solution, dict[str, str], str]:
     """Refine the agent's solution by studying others.
 
     Args:
@@ -169,7 +171,7 @@ def refine_solution(
         all_solutions: Map of agent_id → Solution for all alive agents.
 
     Returns:
-        The refined Solution with incremented generation_round.
+        (Solution, prompt_dict, response_text)
     """
     my_code = (agent.current_solution.code if agent.current_solution
                else "No solution yet.")
@@ -186,12 +188,13 @@ def refine_solution(
         my_solution=my_code,
         other_solutions=other_text,
     )
-    code = agent.provider.generate(REFINE_SYSTEM, user)
-    code = _strip_code_fences(code)
+    response_raw = agent.provider.generate(REFINE_SYSTEM, user)
+    code = _strip_code_fences(response_raw)
     prev_round = agent.current_solution.generation_round if agent.current_solution else 0
     solution = Solution(code=code, generation_round=prev_round + 1)
     agent.current_solution = solution
-    return solution
+    prompt = {"system": REFINE_SYSTEM, "user": user}
+    return solution, prompt, response_raw
 
 
 def vote(
@@ -200,7 +203,7 @@ def vote(
     solution_map: dict[int, Solution],
     K: int,
     my_index: int,
-) -> list[int]:
+) -> tuple[list[int], dict[str, str], str]:
     """Vote for the best solutions.
 
     Args:
@@ -211,7 +214,7 @@ def vote(
         my_index: Agent's index in the solution listing (to exclude self).
 
     Returns:
-        Ordered list of agent_ids from best to worst (length = K or 1).
+        (voted_agent_ids, prompt_dict, response_text)
     """
     # Build solutions list for the prompt, excluding self
     solutions_parts = []
@@ -226,6 +229,7 @@ def vote(
     solutions_text = "\n".join(solutions_parts)
 
     if K == 1:
+        system = VOTE_SYSTEM
         user = VOTE_USER_BEST_1.format(
             title=problem.get("title", ""),
             description=problem.get("description", ""),
@@ -233,6 +237,7 @@ def vote(
             my_index=my_index,
         )
     else:
+        system = VOTE_SYSTEM
         user = VOTE_USER_TOP_K.format(
             title=problem.get("title", ""),
             description=problem.get("description", ""),
@@ -241,8 +246,10 @@ def vote(
             my_index=my_index,
         )
 
-    response = agent.provider.generate(VOTE_SYSTEM, user)
-    return _parse_vote_response(response, agent_ids, K)
+    response_raw = agent.provider.generate(system, user)
+    voted = _parse_vote_response(response_raw, agent_ids, K)
+    prompt = {"system": system, "user": user}
+    return voted, prompt, response_raw
 
 
 # ---------------------------------------------------------------------------

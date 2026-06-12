@@ -37,28 +37,31 @@ def run_single_problem(
     debate_rounds = 0
     winner_code = ""
     winner_provider = ""
+    winner_id = -1
 
     if config.baseline:
         # --- BASELINE: generate once, pick best by test pass rate ---
         solutions = []
+        round0_agents: dict[str, dict] = {}
         for agent in agents:
-            sol = generate_initial_solution(agent, problem)
+            sol, prompt, response = generate_initial_solution(agent, problem)
             total_llm_calls += 1
             solutions.append((agent, sol))
+            round0_agents[str(agent.id)] = {
+                "provider": agent.provider.model_name,
+                "code": sol.code,
+                "prompt": prompt,
+                "response": response,
+            }
 
         # Test all solutions, pick best
         best_agent = None
         best_code = ""
         best_passed = -1
-        all_results = []
+        test_results: dict[str, dict] = {}
         for agent, sol in solutions:
             passed, total, _ = run_all_tests(sol.code, problem)
-            all_results.append({
-                "agent_id": agent.id,
-                "provider": agent.provider.model_name,
-                "passed": passed,
-                "total": total,
-            })
+            test_results[str(agent.id)] = {"passed": passed, "total": total}
             if passed > best_passed:
                 best_passed = passed
                 best_agent = agent
@@ -68,6 +71,20 @@ def run_single_problem(
         if best_agent:
             winner_code = best_code
             winner_provider = best_agent.provider.model_name
+            winner_id = best_agent.id
+
+        # Build Baseline transcript
+        transcript = [
+            {"round": 0, "phase": "initial", "agents": round0_agents},
+            {
+                "round": "result", "phase": "selection",
+                "test_results": test_results,
+                "selected": {
+                    "agent_id": best_agent.id if best_agent else -1,
+                    "reason": "highest_pass_rate",
+                },
+            },
+        ]
     else:
         # --- DEBATE MODE: full multi-agent debate ---
         params = DebateParams(
@@ -84,10 +101,30 @@ def run_single_problem(
             (a.provider.model_name for a in agents if a.id == result.winner_id),
             "unknown",
         )
+        winner_id = result.winner_id
+        transcript = result.transcript
 
     # --- Sandbox verification ---
     passed, total, output = run_all_tests(winner_code, problem)
     pass_at_1 = (passed == total and total > 0)
+
+    # --- Write transcript ---
+    safe_exp = _safe_name(config.name)
+    transcript_dir = Path("results/transcripts") / safe_exp
+    transcript_dir.mkdir(parents=True, exist_ok=True)
+    transcript_path = transcript_dir / f"{problem.get('problem_id', 'unknown')}.json"
+    full_transcript = {
+        "problem_id": problem.get("problem_id", ""),
+        "difficulty": problem.get("difficulty", ""),
+        "experiment": config.name,
+        "N": config.N,
+        "K": config.K if not config.baseline else 0,
+        "winner_id": winner_id,
+        "pass_at_1": pass_at_1,
+        "rounds": transcript,
+    }
+    with open(transcript_path, "w", encoding="utf-8") as f:
+        json.dump(full_transcript, f, ensure_ascii=False, indent=2)
 
     return {
         "problem_id": problem.get("problem_id", ""),
@@ -103,6 +140,7 @@ def run_single_problem(
         "total_llm_calls": total_llm_calls,
         "winner_provider": winner_provider,
         "solution_code": winner_code,
+        "transcript_path": str(transcript_path),
     }
 
 
