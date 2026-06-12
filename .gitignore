@@ -1,0 +1,9 @@
+docs/superpowers
+.venv/
+.git/
+.reasonix/
+data/
+.env
+__pycache__/
+.pytest_cache/
+results/

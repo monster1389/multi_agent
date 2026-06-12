@@ -1,0 +1,37 @@
+# K=2: Golden mean — 3 elimination rounds + endgame for N=5
+experiment:
+  name: "K=2"
+  N: 5
+  K: 2
+
+providers:
+  - name: "gpt-4o"
+    type: "openai"
+    model: "gpt-4o"
+    api_key: "${OPENAI_API_KEY}"
+  - name: "gpt-4o-mini"
+    type: "openai"
+    model: "gpt-4o-mini"
+    api_key: "${OPENAI_API_KEY}"
+  - name: "claude-3.5-sonnet"
+    type: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    api_key: "${ANTHROPIC_API_KEY}"
+  - name: "deepseek-chat"
+    type: "openai"
+    model: "deepseek-chat"
+    base_url: "https://api.deepseek.com"
+    api_key: "${DEEPSEEK_API_KEY}"
+  - name: "gpt-4o-2"
+    type: "openai"
+    model: "gpt-4o"
+    api_key: "${OPENAI_API_KEY}"
+
+debate_params:
+  alpha: 0.5
+  gamma: 0.3
+
+dataset:
+  source: "newfacade/LeetCodeDataset"
+  subset_size: 10
+  random_seed: 42

@@ -1,0 +1,37 @@
+# K=N (K=5): skip elimination phase, immediate endgame Best-1 collapse
+experiment:
+  name: "K=N (K=5)"
+  N: 5
+  K: 5
+
+providers:
+  - name: "gpt-4o"
+    type: "openai"
+    model: "gpt-4o"
+    api_key: "${OPENAI_API_KEY}"
+  - name: "gpt-4o-mini"
+    type: "openai"
+    model: "gpt-4o-mini"
+    api_key: "${OPENAI_API_KEY}"
+  - name: "claude-3.5-sonnet"
+    type: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    api_key: "${ANTHROPIC_API_KEY}"
+  - name: "deepseek-chat"
+    type: "openai"
+    model: "deepseek-chat"
+    base_url: "https://api.deepseek.com"
+    api_key: "${DEEPSEEK_API_KEY}"
+  - name: "gpt-4o-2"
+    type: "openai"
+    model: "gpt-4o"
+    api_key: "${OPENAI_API_KEY}"
+
+debate_params:
+  alpha: 0.5
+  gamma: 0.3
+
+dataset:
+  source: "newfacade/LeetCodeDataset"
+  subset_size: 10
+  random_seed: 42
