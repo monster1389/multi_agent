@@ -20,6 +20,8 @@ src/            All source code (flat package)
 
 ## Commands
 
+use python in .venv
+
 ```bash
 # Run a single experiment
 python -m src.experiment --config configs/baseline.yaml
