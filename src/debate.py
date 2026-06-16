@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 
 from .agent import Agent, Solution, generate_initial_solution, refine_solution, vote
 from .graph_utils import find_cycles
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
 
 # ---------------------------------------------------------------------------
@@ -90,14 +92,19 @@ class DebateEngine:
             agent.weight = 1.0 / N
             agent.cumulative_gamma = 0.0
             agent.alive = True
-            sol, prompt, response = generate_initial_solution(agent, problem)
+
+        gen_results = _run_parallel([
+            (generate_initial_solution, (agent, problem)) for agent in self.agents
+        ])
+        self._llm_calls += len(self.agents)
+        for agent in self.agents:
+            sol, prompt, response = gen_results[agent.id]
             round0_agents[str(agent.id)] = {
                 "provider": agent.provider.model_name,
                 "code": sol.code,
                 "prompt": prompt,
                 "response": response,
             }
-            self._llm_calls += 1
         self._transcript.append({"round": 0, "phase": "initial", "agents": round0_agents})
 
         round_num = 0
@@ -150,25 +157,31 @@ class DebateEngine:
         solutions = {a.id: a.current_solution for a in alive if a.current_solution}
         weights_before = {str(a.id): round(a.weight, 4) for a in alive}
         refine_data: dict[str, dict] = {}
+        refine_results = _run_parallel([
+            (refine_solution, (a, problem, solutions)) for a in alive
+        ])
+        self._llm_calls += len(alive)
         for agent in alive:
-            sol, prompt, response = refine_solution(agent, problem, solutions)
+            sol, prompt, response = refine_results[agent.id]
             refine_data[str(agent.id)] = {
                 "code": sol.code, "prompt": prompt, "response": response
             }
-            self._llm_calls += 1
 
         # --- 2. Vote Top-K ---
         solutions = {a.id: a.current_solution for a in alive if a.current_solution}
         votes: dict[int, list[int]] = {}
         vote_data: dict[str, dict] = {}
+        vote_results = _run_parallel([
+            (vote, (a, problem, solutions, self.K, a.id)) for a in alive
+        ])
+        self._llm_calls += len(alive)
         for agent in alive:
-            voted, prompt, response = vote(agent, problem, solutions, self.K, my_index=agent.id)
+            voted, prompt, response = vote_results[agent.id]
             votes[agent.id] = voted
             vote_data[str(agent.id)] = {
                 "voted_for": voted, "raw_response": response,
                 "prompt": prompt, "response": response,
             }
-            self._llm_calls += 1
 
         # --- 3. Weighted scoring ---
         scores = self._compute_weighted_scores(alive, votes)
@@ -230,26 +243,32 @@ class DebateEngine:
         # --- 1. Refine ---
         solutions = {a.id: a.current_solution for a in alive if a.current_solution}
         refine_data: dict[str, dict] = {}
+        refine_results = _run_parallel([
+            (refine_solution, (a, problem, solutions)) for a in alive
+        ])
+        self._llm_calls += len(alive)
         for agent in alive:
-            sol, prompt, response = refine_solution(agent, problem, solutions)
+            sol, prompt, response = refine_results[agent.id]
             refine_data[str(agent.id)] = {
                 "code": sol.code, "prompt": prompt, "response": response
             }
-            self._llm_calls += 1
 
         # --- 2. Vote Best-1 ---
         solutions = {a.id: a.current_solution for a in alive if a.current_solution}
         best_votes: dict[int, int] = {}
         vote_data: dict[str, dict] = {}
+        vote_results = _run_parallel([
+            (vote, (a, problem, solutions, 1, a.id)) for a in alive
+        ])
+        self._llm_calls += len(alive)
         for agent in alive:
-            voted_list, prompt, response = vote(agent, problem, solutions, K=1, my_index=agent.id)
+            voted_list, prompt, response = vote_results[agent.id]
             if voted_list:
                 best_votes[agent.id] = voted_list[0]
             vote_data[str(agent.id)] = {
                 "voted_for": voted_list, "raw_response": response,
                 "prompt": prompt, "response": response,
             }
-            self._llm_calls += 1
 
         # --- 3. Weight absorption ---
         self._weight_absorption(alive, best_votes)
@@ -464,3 +483,33 @@ class DebateEngine:
     def _alive_agents(self) -> list[Agent]:
         """Return list of currently alive agents."""
         return [a for a in self.agents if a.alive]
+
+
+# ---------------------------------------------------------------------------
+# Parallel execution helper
+# ---------------------------------------------------------------------------
+
+def _run_parallel(fn_arg_pairs: list[tuple]) -> dict[int, Any]:
+    """Run multiple (fn, args) calls in parallel.
+
+    fn_arg_pairs: [(callable, (arg1, arg2, ...)), ...]
+    Each tuple's FIRST arg must be the agent,
+    result keyed by agent.id.
+    任一 Future 失败 → 取消全部未完成 Future，异常向上冒泡。
+    """
+    if not fn_arg_pairs:
+        return {}
+    with ThreadPoolExecutor(max_workers=len(fn_arg_pairs)) as pool:
+        futures = [pool.submit(fn, *args) for fn, args in fn_arg_pairs]
+        future_to_idx = {f: i for i, f in enumerate(futures)}
+        results = [None] * len(futures)
+        for f in as_completed(futures):
+            idx = future_to_idx[f]
+            try:
+                results[idx] = f.result()
+            except BaseException:
+                for ff in futures:
+                    ff.cancel()
+                raise
+        return {fn_arg_pairs[i][1][0].id: results[i]
+                for i in range(len(fn_arg_pairs))}

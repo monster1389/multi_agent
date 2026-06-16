@@ -41,11 +41,15 @@ def run_single_problem(
 
     if config.baseline:
         # --- BASELINE: generate once, pick best by test pass rate ---
+        from .debate import _run_parallel
         solutions = []
         round0_agents: dict[str, dict] = {}
+        gen_results = _run_parallel([
+            (generate_initial_solution, (agent, problem)) for agent in agents
+        ])
+        total_llm_calls += len(agents)
         for agent in agents:
-            sol, prompt, response = generate_initial_solution(agent, problem)
-            total_llm_calls += 1
+            sol, prompt, response = gen_results[agent.id]
             solutions.append((agent, sol))
             round0_agents[str(agent.id)] = {
                 "provider": agent.provider.model_name,
