@@ -13,7 +13,7 @@ class AnthropicProvider(BaseLLMProvider):
 
     def __init__(self, model: str, api_key: str):
         self._model = model
-        self._client = Anthropic(api_key=api_key)
+        self._client = Anthropic(api_key=api_key, timeout=DEFAULT_TIMEOUT)
 
     @property
     def model_name(self) -> str:

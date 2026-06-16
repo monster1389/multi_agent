@@ -2,6 +2,10 @@
 
 from abc import ABC, abstractmethod
 
+import httpx
+
+DEFAULT_TIMEOUT = httpx.Timeout(3600.0, connect=30.0)
+
 
 class BaseLLMProvider(ABC):
     """Unified interface for all LLM providers.

@@ -2,7 +2,7 @@
 
 from openai import OpenAI
 
-from .base import BaseLLMProvider
+from .base import BaseLLMProvider, DEFAULT_TIMEOUT
 
 
 class OpenAIProvider(BaseLLMProvider):
@@ -16,7 +16,7 @@ class OpenAIProvider(BaseLLMProvider):
         client_kwargs = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url
-        self._client = OpenAI(**client_kwargs)
+        self._client = OpenAI(**client_kwargs, timeout=DEFAULT_TIMEOUT)
 
     @property
     def model_name(self) -> str:
