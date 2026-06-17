@@ -1,9 +1,13 @@
 """LeetCode dataset loading from HuggingFace, with local caching."""
 
 import json
+import os
 import random
 from pathlib import Path
 from typing import Any
+
+# Use HF mirror by default for faster downloads inside GFW
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 from datasets import load_dataset
 
