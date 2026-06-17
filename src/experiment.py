@@ -2,6 +2,8 @@
 
 import json
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -176,6 +178,7 @@ def run_experiment(
     config: ExperimentConfig,
     max_problems: int | None = None,
     output_dir: Path | None = None,
+    workers: int = 1,
 ) -> list[dict[str, Any]]:
     """Run an experiment across all (or a subset of) problems.
 
@@ -183,6 +186,7 @@ def run_experiment(
         config: Experiment configuration.
         max_problems: Limit problems (for quick testing). None = all.
         output_dir: Optional run directory. If None, auto-generated timestamp.
+        workers: Number of problems to run concurrently (default: 1 = serial).
 
     Returns:
         List of per-problem result dicts.
@@ -199,27 +203,65 @@ def run_experiment(
     results = []
     output_path = run_dir / f"{_safe_name(config.name)}.jsonl"
 
-    for i, problem in enumerate(problems):
-        print(f"[{i+1}/{len(problems)}] {problem['problem_id']} ({problem['difficulty']}) ...", end=" ", flush=True)
-        try:
-            result = run_single_problem(problem, config, output_dir=run_dir)
-            results.append(result)
-            status = "PASS" if result["pass_at_1"] else "FAIL"
-            print(f"{status} | rounds={result['debate_rounds']} calls={result['total_llm_calls']}")
-        except Exception as e:
-            print(f"ERROR: {e}")
-            results.append({
-                "problem_id": problem.get("problem_id", ""),
-                "difficulty": problem.get("difficulty", ""),
-                "experiment": config.name,
-                "pass_at_1": False,
-                "error": str(e),
-            })
+    if workers <= 1:
+        for i, problem in enumerate(problems):
+            print(f"[{i+1}/{len(problems)}] {problem['problem_id']} ({problem['difficulty']}) ...", end=" ", flush=True)
+            try:
+                result = run_single_problem(problem, config, output_dir=run_dir)
+                results.append(result)
+                status = "PASS" if result["pass_at_1"] else "FAIL"
+                print(f"{status} | rounds={result['debate_rounds']} calls={result['total_llm_calls']}")
+            except Exception as e:
+                print(f"ERROR: {e}")
+                results.append({
+                    "problem_id": problem.get("problem_id", ""),
+                    "difficulty": problem.get("difficulty", ""),
+                    "experiment": config.name,
+                    "pass_at_1": False,
+                    "error": str(e),
+                })
 
-        # Write incrementally
-        with open(output_path, "w", encoding="utf-8") as f:
-            for r in results:
-                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+            # Write incrementally
+            with open(output_path, "w", encoding="utf-8") as f:
+                for r in results:
+                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    else:
+        write_lock = threading.Lock()
+        results_by_idx: dict[int, dict[str, Any]] = {}
+
+        def _run_one(idx: int, problem: dict[str, Any]) -> None:
+            pid = problem.get("problem_id", "unknown")
+            with write_lock:
+                print(f"[{idx+1}/{len(problems)}] {pid} ({problem.get('difficulty', '?')}) ...", end=" ", flush=True)
+            try:
+                result = run_single_problem(problem, config, output_dir=run_dir)
+                status = "PASS" if result["pass_at_1"] else "FAIL"
+                with write_lock:
+                    print(f"{status} | rounds={result['debate_rounds']} calls={result['total_llm_calls']}")
+                    results_by_idx[idx] = result
+            except Exception as e:
+                with write_lock:
+                    print(f"ERROR: {e}")
+                    results_by_idx[idx] = {
+                        "problem_id": problem.get("problem_id", ""),
+                        "difficulty": problem.get("difficulty", ""),
+                        "experiment": config.name,
+                        "pass_at_1": False,
+                        "error": str(e),
+                    }
+            # Incremental write under lock
+            with write_lock:
+                results = [results_by_idx[k] for k in sorted(results_by_idx)]
+                with open(output_path, "w", encoding="utf-8") as f:
+                    for r in results:
+                        f.write(json.dumps(r, ensure_ascii=False) + "\n")
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_run_one, i, p) for i, p in enumerate(problems)]
+            for _ in as_completed(futures):
+                pass
+
+        results = [results_by_idx[k] for k in sorted(results_by_idx)]
 
     return results
 
@@ -240,6 +282,8 @@ if __name__ == "__main__":
     parser.add_argument("--config", required=True, help="Path to YAML config file.")
     parser.add_argument("--max-problems", type=int, default=None,
                         help="Limit number of problems (for testing).")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Number of problems to run concurrently (default: 1 = serial).")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -247,7 +291,7 @@ if __name__ == "__main__":
     print(f"Problems: {cfg.dataset.subset_size} | Seed: {cfg.dataset.random_seed}")
     print("---")
 
-    results = run_experiment(cfg, max_problems=args.max_problems)
+    results = run_experiment(cfg, max_problems=args.max_problems, workers=args.workers)
 
     # Quick summary
     from .evaluation import summarize_experiment
