@@ -192,12 +192,9 @@ def run_experiment(
         List of per-problem result dicts.
     """
     problems = load_leetcode_dataset(
-        subset_size=config.dataset.subset_size,
+        subset_size=max_problems or config.dataset.subset_size,
         seed=config.dataset.random_seed,
     )
-
-    if max_problems:
-        problems = problems[:max_problems]
 
     run_dir = _make_run_dir(output_dir)
     results = []
