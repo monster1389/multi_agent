@@ -18,12 +18,13 @@ EXPERIMENT_CONFIGS = [
 ]
 
 
-def run_all(max_problems: int | None = None) -> None:
+def run_all(max_problems: int | None = None, workers: int = 1) -> None:
     """Run all experiments sequentially and produce a comparison summary.
 
     Args:
         max_problems: If set, limit each experiment to this many problems
                       (for quick smoke tests).
+        workers: Number of problems to run concurrently (default: 1 = serial).
     """
     run_id = datetime.now().strftime("%Y-%m-%d_%H%M")
     run_dir = Path("results") / run_id
@@ -38,7 +39,7 @@ def run_all(max_problems: int | None = None) -> None:
         print(f"N={cfg.N}, K={cfg.K}, baseline={cfg.baseline}")
         print(f"{'='*60}")
 
-        results = run_experiment(cfg, max_problems=max_problems, output_dir=run_dir)
+        results = run_experiment(cfg, max_problems=max_problems, output_dir=run_dir, workers=workers)
         all_results[cfg.name] = results
 
         # Per-experiment quick summary
@@ -68,5 +69,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run all debate experiments.")
     parser.add_argument("--max-problems", type=int, default=None,
                         help="Limit problems per experiment (for smoke testing).")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Number of problems to run concurrently (default: 1 = serial).")
     args = parser.parse_args()
-    run_all(max_problems=args.max_problems)
+    run_all(max_problems=args.max_problems, workers=args.workers)
