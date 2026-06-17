@@ -1,6 +1,7 @@
 """Batch experiment runner: execute all 4 experiment versions + generate summary."""
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from .config import load_config
