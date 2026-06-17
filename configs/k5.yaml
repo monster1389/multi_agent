@@ -38,4 +38,4 @@ debate_params:
 dataset:
   source: "newfacade/LeetCodeDataset"
   subset_size: 10
-  random_seed: 42
+  random_seed: 99
