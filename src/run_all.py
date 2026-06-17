@@ -25,6 +25,10 @@ def run_all(max_problems: int | None = None) -> None:
         max_problems: If set, limit each experiment to this many problems
                       (for quick smoke tests).
     """
+    run_id = datetime.now().strftime("%Y-%m-%d_%H%M")
+    run_dir = Path("results") / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+
     all_results: dict[str, list[dict]] = {}
 
     for config_path in EXPERIMENT_CONFIGS:
@@ -34,7 +38,7 @@ def run_all(max_problems: int | None = None) -> None:
         print(f"N={cfg.N}, K={cfg.K}, baseline={cfg.baseline}")
         print(f"{'='*60}")
 
-        results = run_experiment(cfg, max_problems=max_problems)
+        results = run_experiment(cfg, max_problems=max_problems, output_dir=run_dir)
         all_results[cfg.name] = results
 
         # Per-experiment quick summary
@@ -49,9 +53,8 @@ def run_all(max_problems: int | None = None) -> None:
     table = generate_summary_table(all_results)
     print(table)
 
-    # Write summary to file
-    summary_path = Path("results/summary.md")
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    # Write summary to run directory
+    summary_path = run_dir / "summary.md"
     with open(summary_path, "w", encoding="utf-8") as f:
         f.write("# Multi-Agent Debate Framework — Experiment Results\n\n")
         f.write(table)
