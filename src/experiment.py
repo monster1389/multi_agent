@@ -262,7 +262,8 @@ def run_experiment(
                 try:
                     f.result()
                 except Exception:
-                    pass  # already recorded in results_by_idx
+                    import traceback
+                    traceback.print_exc()  # unexpected infrastructure failure
 
         results = [results_by_idx[k] for k in sorted(results_by_idx)]
 
@@ -288,6 +289,8 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=1,
                         help="Number of problems to run concurrently (default: 1 = serial).")
     args = parser.parse_args()
+    if args.workers < 1:
+        parser.error("--workers must be >= 1")
 
     cfg = load_config(args.config)
     print(f"Experiment: {cfg.name} | N={cfg.N} K={cfg.K} baseline={cfg.baseline}")

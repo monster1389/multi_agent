@@ -72,4 +72,6 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=1,
                         help="Number of problems to run concurrently (default: 1 = serial).")
     args = parser.parse_args()
+    if args.workers < 1:
+        parser.error("--workers must be >= 1")
     run_all(max_problems=args.max_problems, workers=args.workers)
