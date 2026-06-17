@@ -6,8 +6,7 @@ import random
 from pathlib import Path
 from typing import Any
 
-# Use HF mirror by default for faster downloads inside GFW
-os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+# HF_ENDPOINT is set via .env — mirrors (hf-mirror.com) may lack some datasets
 
 from datasets import load_dataset
 
