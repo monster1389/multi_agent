@@ -5,9 +5,9 @@ experiment:
   K: 5
 
 providers:
-  - name: "qwen3.6-flash-2026-04-16"
+  - name: "qwen3.5-plus-2026-04-20"
     type: "openai"
-    model: "qwen3.6-flash-2026-04-16"
+    model: "qwen3.5-plus-2026-04-20"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     api_key: "${DASHSCOPE_API_KEY}"
   - name: "deepseek-v4-flash"
