@@ -25,9 +25,9 @@ providers:
     model: "glm-5.1"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     api_key: "${DASHSCOPE_API_KEY}"
-  - name: "qwen3.6-27b"
+  - name: "qwen3.6-plus"
     type: "openai"
-    model: "qwen3.6-27b"
+    model: "qwen3.6-plus"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     api_key: "${DASHSCOPE_API_KEY}"
 
