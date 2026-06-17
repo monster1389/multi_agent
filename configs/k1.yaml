@@ -5,9 +5,9 @@ experiment:
   K: 1
 
 providers:
-  - name: "qwen3.6-flash"
+  - name: "qwen3.6-flash-2026-04-16"
     type: "openai"
-    model: "qwen3.6-flash"
+    model: "qwen3.6-flash-2026-04-16"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     api_key: "${DASHSCOPE_API_KEY}"
   - name: "deepseek-v4-flash"
@@ -20,14 +20,14 @@ providers:
     model: "kimi-k2.6"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     api_key: "${DASHSCOPE_API_KEY}"
-  - name: "glm-5.1"
+  - name: "glm-5.2"
     type: "openai"
-    model: "glm-5.1"
+    model: "glm-5.2"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     api_key: "${DASHSCOPE_API_KEY}"
-  - name: "qwen3.6-plus"
+  - name: "qwen3.7-max-preview"
     type: "openai"
-    model: "qwen3.6-plus"
+    model: "qwen3.7-max-preview"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     api_key: "${DASHSCOPE_API_KEY}"
 
