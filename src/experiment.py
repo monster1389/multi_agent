@@ -251,15 +251,18 @@ def run_experiment(
                     }
             # Incremental write under lock
             with write_lock:
-                results = [results_by_idx[k] for k in sorted(results_by_idx)]
+                ordered = [results_by_idx[k] for k in sorted(results_by_idx)]
                 with open(output_path, "w", encoding="utf-8") as f:
-                    for r in results:
+                    for r in ordered:
                         f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = [pool.submit(_run_one, i, p) for i, p in enumerate(problems)]
-            for _ in as_completed(futures):
-                pass
+            for f in as_completed(futures):
+                try:
+                    f.result()
+                except Exception:
+                    pass  # already recorded in results_by_idx
 
         results = [results_by_idx[k] for k in sorted(results_by_idx)]
 
