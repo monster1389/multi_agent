@@ -2,6 +2,7 @@
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,12 +17,14 @@ from .sandbox import run_all_tests
 def run_single_problem(
     problem: dict[str, Any],
     config: ExperimentConfig,
+    output_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Run one problem through the debate framework (or baseline).
 
     Args:
         problem: Problem dict from dataset.
         config: Experiment configuration.
+        output_dir: Run directory for transcript output. Required.
 
     Returns:
         Result dict (one JSONL line).
@@ -113,8 +116,10 @@ def run_single_problem(
     pass_at_1 = (passed == total and total > 0)
 
     # --- Write transcript ---
+    if output_dir is None:
+        output_dir = _make_run_dir()
     safe_exp = _safe_name(config.name)
-    transcript_dir = Path("results/transcripts") / safe_exp
+    transcript_dir = output_dir / "transcripts" / safe_exp
     transcript_dir.mkdir(parents=True, exist_ok=True)
     transcript_path = transcript_dir / f"{problem.get('problem_id', 'unknown')}.json"
     full_transcript = {
@@ -148,12 +153,36 @@ def run_single_problem(
     }
 
 
-def run_experiment(config: ExperimentConfig, max_problems: int | None = None) -> list[dict[str, Any]]:
+def _make_run_dir(output_dir: Path | None = None) -> Path:
+    """Resolve the output directory for this run.
+
+    Args:
+        output_dir: Explicit directory (used by run_all).
+                    If None, auto-generate from current timestamp.
+
+    Returns:
+        Resolved Path to the run directory (created if needed).
+    """
+    if output_dir is not None:
+        run_dir = Path(output_dir)
+    else:
+        run_id = datetime.now().strftime("%Y-%m-%d_%H%M")
+        run_dir = Path("results") / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
+
+
+def run_experiment(
+    config: ExperimentConfig,
+    max_problems: int | None = None,
+    output_dir: Path | None = None,
+) -> list[dict[str, Any]]:
     """Run an experiment across all (or a subset of) problems.
 
     Args:
         config: Experiment configuration.
         max_problems: Limit problems (for quick testing). None = all.
+        output_dir: Optional run directory. If None, auto-generated timestamp.
 
     Returns:
         List of per-problem result dicts.
@@ -166,16 +195,14 @@ def run_experiment(config: ExperimentConfig, max_problems: int | None = None) ->
     if max_problems:
         problems = problems[:max_problems]
 
+    run_dir = _make_run_dir(output_dir)
     results = []
-    results_dir = Path("results")
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    output_path = results_dir / f"{_safe_name(config.name)}.jsonl"
+    output_path = run_dir / f"{_safe_name(config.name)}.jsonl"
 
     for i, problem in enumerate(problems):
         print(f"[{i+1}/{len(problems)}] {problem['problem_id']} ({problem['difficulty']}) ...", end=" ", flush=True)
         try:
-            result = run_single_problem(problem, config)
+            result = run_single_problem(problem, config, output_dir=run_dir)
             results.append(result)
             status = "PASS" if result["pass_at_1"] else "FAIL"
             print(f"{status} | rounds={result['debate_rounds']} calls={result['total_llm_calls']}")
