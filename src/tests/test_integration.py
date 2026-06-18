@@ -95,7 +95,7 @@ class TestBaselinePipeline:
         # Monkeypatch create_provider to return our mocks
         call_count = [0]
 
-        def mock_create_provider(pcfg, pools=None):
+        def mock_create_provider(pcfg, pool_instances=None):
             idx = call_count[0]
             call_count[0] += 1
             return providers[idx]
@@ -121,7 +121,7 @@ class TestBaselinePipeline:
             "class Solution:\n    def solve(self, a, b):\n        return a + b\n"
         ]
 
-        def mock_create_provider(pcfg, pools=None):
+        def mock_create_provider(pcfg, pool_instances=None):
             return p
 
         monkeypatch.setattr("src.experiment.create_provider", mock_create_provider)
@@ -162,7 +162,7 @@ class TestDebatePipeline:
 
         call_count = [0]
 
-        def mock_create_provider(pcfg, pools=None):
+        def mock_create_provider(pcfg, pool_instances=None):
             idx = call_count[0]
             call_count[0] += 1
             return providers[idx]
@@ -200,7 +200,7 @@ class TestDebatePipeline:
 
         call_count = [0]
 
-        def mock_create_provider(pcfg, pools=None):
+        def mock_create_provider(pcfg, pool_instances=None):
             idx = call_count[0]
             call_count[0] += 1
             return providers[idx]
@@ -264,7 +264,7 @@ class TestErrorHandling:
         p = MockProvider(name="agent-0")
         p.generate_responses = ["class Solution:\n    def solve(self):\n        return 1\n"]
 
-        def mock_create_provider(pcfg, pools=None):
+        def mock_create_provider(pcfg, pool_instances=None):
             return p
         monkeypatch.setattr("src.experiment.create_provider", mock_create_provider)
 
