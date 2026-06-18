@@ -21,7 +21,8 @@ class OpenAIProvider(BaseLLMProvider):
     ):
         self._model = model
         self._model_pool = model_pool
-        self._base_url = base_url
+        self._api_key = api_key
+        self._base_url = base_url or None
         client_kwargs = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url
@@ -39,7 +40,7 @@ class OpenAIProvider(BaseLLMProvider):
         temperature = kwargs.get("temperature", 0.7)
 
         max_retries = len(self._model_pool) if self._model_pool else 0
-        for attempt in range(max_retries + 1):
+        for _ in range(max_retries + 1):
             try:
                 response = self._client.chat.completions.create(
                     model=self._model,
@@ -52,10 +53,11 @@ class OpenAIProvider(BaseLLMProvider):
                     try:
                         self._model = self._model_pool.replace(self._model)
                         self._client = OpenAI(
-                            api_key=self._client.api_key,
-                            base_url=self._base_url,
+                            api_key=self._api_key,
+                            base_url=self._base_url or "",
                             timeout=DEFAULT_TIMEOUT,
                         )
+                        continue
                     except RuntimeError:
                         raise RuntimeError(
                             f"All models in pool exhausted after {self._model} returned 403"
