@@ -50,6 +50,7 @@ class ModelPool:
         if not models:
             raise ValueError("ModelPool requires at least one model")
         self._models: list[str] = list(models)
+        self._allocated: set[str] = set()
         self._lock = threading.Lock()
 
     def allocate(self) -> str:
@@ -57,16 +58,33 @@ class ModelPool:
         with self._lock:
             if not self._models:
                 raise RuntimeError("Model pool exhausted — all models returned 403")
-            return self._models.pop(0)
+            model = self._models.pop(0)
+            self._allocated.add(model)
+            return model
 
     def replace(self, failed_model: str) -> str:
-        """Remove failed_model if still in pool, then return the next available model."""
+        """Replace a failed (403) model with the next available one.
+
+        Args:
+            failed_model: Must be a model previously returned by allocate().
+
+        Raises:
+            RuntimeError: If pool is empty.
+            ValueError: If failed_model was never allocated from this pool.
+        """
         with self._lock:
+            if failed_model not in self._allocated:
+                raise ValueError(
+                    f"Model '{failed_model}' was never allocated from this pool"
+                )
+            self._allocated.discard(failed_model)
             if failed_model in self._models:
                 self._models.remove(failed_model)
             if not self._models:
                 raise RuntimeError("Model pool exhausted — all models returned 403")
-            return self._models.pop(0)
+            model = self._models.pop(0)
+            self._allocated.add(model)
+            return model
 
     def __len__(self) -> int:
         with self._lock:

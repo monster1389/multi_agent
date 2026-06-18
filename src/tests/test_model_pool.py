@@ -26,19 +26,23 @@ class TestModelPool:
 
     def test_replace_removes_failed_and_returns_other(self):
         pool = ModelPool(["a", "b", "c"])
-        result = pool.replace("a")
+        first = pool.allocate()  # "a"
+        result = pool.replace(first)
         assert result in ("b", "c")
-        # replace() also pops the returned model, so one model remains
         remaining = pool.allocate()
-        assert remaining != "a"
-        # No more models left — replace() already removed "a" and popped one,
-        # and allocate() just popped the last one
+        assert remaining not in (first, result)
         assert len(pool) == 0
 
     def test_replace_last_model_raises(self):
         pool = ModelPool(["x"])
+        first = pool.allocate()
         with pytest.raises(RuntimeError, match="exhausted"):
-            pool.replace("x")
+            pool.replace(first)
+
+    def test_replace_unallocated_model_raises(self):
+        pool = ModelPool(["a", "b"])
+        with pytest.raises(ValueError, match="never allocated"):
+            pool.replace("a")
 
     def test_thread_safety(self):
         pool = ModelPool([str(i) for i in range(100)])

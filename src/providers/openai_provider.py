@@ -58,10 +58,10 @@ class OpenAIProvider(BaseLLMProvider):
                             timeout=DEFAULT_TIMEOUT,
                         )
                         continue
-                    except RuntimeError:
+                    except RuntimeError as pool_err:
                         raise RuntimeError(
                             f"All models in pool exhausted after {self._model} returned 403"
-                        ) from e
+                        ) from pool_err
                 raise
 
     def _is_quota_exhausted(self, exc: Exception) -> bool:
