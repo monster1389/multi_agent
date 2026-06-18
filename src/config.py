@@ -40,55 +40,63 @@ class DatasetConfig:
     random_seed: int = 42
 
 
-class ModelPool:
-    """Thread-safe model pool for automatic fallback on quota exhaustion.
-
-    Agents allocate models via pop; on 403, replace() swaps in a new one.
-    """
+class PoolDefinition:
+    """Shared model pool definition. Holds model list and global dead_set."""
 
     def __init__(self, models: list[str]):
         if not models:
-            raise ValueError("ModelPool requires at least one model")
+            raise ValueError("PoolDefinition requires at least one model")
         self._models: list[str] = list(models)
-        self._allocated: set[str] = set()
+        self._dead: set[str] = set()
+        self._dead_lock = threading.Lock()
+
+    def create_instance(self) -> "PoolInstance":
+        """Create a per-problem PoolInstance sharing the global dead_set."""
+        return PoolInstance(self._models, self._dead, self._dead_lock)
+
+    def __len__(self) -> int:
+        return len(self._models)
+
+
+class PoolInstance:
+    """Per-problem pool instance. Same-problem models not repeated; dead_set shared globally."""
+
+    def __init__(self, models: list[str], dead: set[str], dead_lock: threading.Lock):
+        self._models = models
+        self._dead = dead
+        self._dead_lock = dead_lock
+        self._in_use: set[str] = set()
         self._lock = threading.Lock()
 
-    def allocate(self) -> str:
-        """Pop and return a model from the pool. Raises RuntimeError if empty."""
+    def checkout(self) -> str:
+        """Return an available model, mark in_use. Raises RuntimeError if none available."""
         with self._lock:
-            if not self._models:
-                raise RuntimeError("Model pool exhausted — all models returned 403")
-            model = self._models.pop(0)
-            self._allocated.add(model)
+            available = [m for m in self._models
+                        if m not in self._dead and m not in self._in_use]
+            if not available:
+                raise RuntimeError("No available models in pool")
+            model = available[0]
+            self._in_use.add(model)
             return model
 
     def replace(self, failed_model: str) -> str:
-        """Replace a failed (403) model with the next available one.
-
-        Args:
-            failed_model: Must be a model previously returned by allocate().
-
-        Raises:
-            RuntimeError: If pool is empty.
-            ValueError: If failed_model was never allocated from this pool.
-        """
+        """Mark failed globally dead, return next available. Raises RuntimeError if none left."""
+        with self._dead_lock:
+            self._dead.add(failed_model)
         with self._lock:
-            if failed_model not in self._allocated:
-                raise ValueError(
-                    f"Model '{failed_model}' was never allocated from this pool"
-                )
-            self._allocated.discard(failed_model)
-            if failed_model in self._models:
-                self._models.remove(failed_model)
-            if not self._models:
-                raise RuntimeError("Model pool exhausted — all models returned 403")
-            model = self._models.pop(0)
-            self._allocated.add(model)
+            self._in_use.discard(failed_model)
+            available = [m for m in self._models
+                        if m not in self._dead and m not in self._in_use]
+            if not available:
+                raise RuntimeError("All models in pool exhausted")
+            model = available[0]
+            self._in_use.add(model)
             return model
 
-    def __len__(self) -> int:
+    def release_all(self) -> None:
+        """Clear in_use — non-dead models become available for the next problem."""
         with self._lock:
-            return len(self._models)
+            self._in_use.clear()
 
 
 @dataclass
@@ -101,7 +109,7 @@ class ExperimentConfig:
     providers: list[ProviderConfig] = field(default_factory=list)
     debate_params: DebateParams = field(default_factory=DebateParams)
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
-    pools: dict[str, "ModelPool"] = field(default_factory=dict)
+    pools: dict[str, "PoolDefinition"] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -179,15 +187,19 @@ def load_config(yaml_path: str) -> ExperimentConfig:
     debate_params = _parse_debate_params(raw.get("debate_params"))
     dataset = _parse_dataset(raw.get("dataset"))
 
-    # Parse model pools
-    pools: dict[str, ModelPool] = {}
-    raw_pools = raw.get("model_pool", {}) or {}
-    for pool_name, model_list in raw_pools.items():
-        if not isinstance(model_list, list):
-            raise ConfigError(
-                f"model_pool.{pool_name} must be a list of model names, got {type(model_list).__name__}"
-            )
-        pools[pool_name] = ModelPool(model_list)
+    # Load shared model pool definitions
+    pools: dict[str, PoolDefinition] = {}
+    pool_yaml_path = Path("configs/model_pool.yaml")
+    if pool_yaml_path.exists():
+        with open(pool_yaml_path, "r", encoding="utf-8") as f:
+            pool_raw = yaml.safe_load(f) or {}
+        for pool_name, model_list in pool_raw.items():
+            if not isinstance(model_list, list):
+                raise ConfigError(
+                    f"model_pool.{pool_name} must be a list of model names, "
+                    f"got {type(model_list).__name__}"
+                )
+            pools[pool_name] = PoolDefinition(model_list)
 
     config = ExperimentConfig(
         name=name,
