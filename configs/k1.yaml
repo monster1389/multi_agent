@@ -1,10 +1,4 @@
 # K=1: Top-1 voting, extreme zero-sum (Battle Royale mode)
-model_pool:
-  dashscope:
-    - "qwen3.6-max-preview"
-    - "qwen3.7-max-preview"
-    - "qwen3.6-flash-2026-04-16"
-    - "kimi-k2.7-code"
 
 experiment:
   name: "K=1"

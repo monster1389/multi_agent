@@ -31,10 +31,16 @@ def run_single_problem(
     Returns:
         Result dict (one JSONL line).
     """
+    # Create pool instances for this problem
+    pool_instances = {
+        name: pool_def.create_instance()
+        for name, pool_def in config.pools.items()
+    }
+
     # Create agents with their providers
     agents = []
     for i, pcfg in enumerate(config.providers):
-        provider = create_provider(pcfg, pools=config.pools)
+        provider = create_provider(pcfg, pool_instances=pool_instances)
         agent = Agent(id=i, provider=provider)
         agents.append(agent)
 
@@ -136,6 +142,10 @@ def run_single_problem(
     }
     with open(transcript_path, "w", encoding="utf-8") as f:
         json.dump(full_transcript, f, ensure_ascii=False, indent=2)
+
+    # Release pool models for reuse by next problem
+    for instance in pool_instances.values():
+        instance.release_all()
 
     return {
         "problem_id": problem.get("problem_id", ""),

@@ -1,10 +1,4 @@
 # K=N (K=5): skip elimination phase, immediate endgame Best-1 collapse
-model_pool:
-  dashscope:
-    - "qwen3.6-max-preview"
-    - "qwen3.7-max-preview"
-    - "qwen3.6-flash-2026-04-16"
-    - "kimi-k2.7-code"
 
 experiment:
   name: "K=N (K=5)"

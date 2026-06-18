@@ -1,10 +1,4 @@
 # K=2: Golden mean — 3 elimination rounds + endgame for N=5
-model_pool:
-  dashscope:
-    - "qwen3.6-max-preview"
-    - "qwen3.7-max-preview"
-    - "qwen3.6-flash-2026-04-16"
-    - "kimi-k2.7-code"
 
 experiment:
   name: "K=2"
