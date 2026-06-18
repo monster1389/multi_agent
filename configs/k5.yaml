@@ -1,4 +1,11 @@
 # K=N (K=5): skip elimination phase, immediate endgame Best-1 collapse
+model_pool:
+  dashscope:
+    - "qwen3.6-max-preview"
+    - "qwen3.7-max-preview"
+    - "qwen3.6-flash-2026-04-16"
+    - "kimi-k2.7-code"
+
 experiment:
   name: "K=N (K=5)"
   N: 5
@@ -7,7 +14,7 @@ experiment:
 providers:
   - name: "qwen3.6-max-preview"
     type: "openai"
-    model: "qwen3.6-max-preview"
+    model: "pool:dashscope"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     api_key: "${DASHSCOPE_API_KEY}"
   - name: "deepseek-v4-flash"
@@ -17,7 +24,7 @@ providers:
     api_key: "${DEEPSEEK_API_KEY}"
   - name: "kimi-k2.7-code"
     type: "openai"
-    model: "kimi-k2.7-code"
+    model: "pool:dashscope"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     api_key: "${DASHSCOPE_API_KEY}"
   - name: "deepseek-v4-pro"
@@ -27,7 +34,7 @@ providers:
     api_key: "${DEEPSEEK_API_KEY}"
   - name: "qwen3.7-max-preview"
     type: "openai"
-    model: "qwen3.7-max-preview"
+    model: "pool:dashscope"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     api_key: "${DASHSCOPE_API_KEY}"
 
