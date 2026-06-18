@@ -13,7 +13,7 @@ def create_provider(
     """Create a provider instance from its configuration.
 
     Supports pool:<name> syntax for model — allocates from the named pool.
-    Passes pool reference to provider for automatic fallback on 403 errors.
+    Passes pool reference to OpenAIProvider for automatic fallback on 403 errors.
 
     Args:
         config: ProviderConfig with type, model, api_key, base_url.
