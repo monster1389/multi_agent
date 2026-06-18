@@ -2,6 +2,7 @@
 
 import os
 import re
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,6 +40,39 @@ class DatasetConfig:
     random_seed: int = 42
 
 
+class ModelPool:
+    """Thread-safe model pool for automatic fallback on quota exhaustion.
+
+    Agents allocate models via pop; on 403, replace() swaps in a new one.
+    """
+
+    def __init__(self, models: list[str]):
+        if not models:
+            raise ValueError("ModelPool requires at least one model")
+        self._models: list[str] = list(models)
+        self._lock = threading.Lock()
+
+    def allocate(self) -> str:
+        """Pop and return a model from the pool. Raises RuntimeError if empty."""
+        with self._lock:
+            if not self._models:
+                raise RuntimeError("Model pool exhausted — all models returned 403")
+            return self._models.pop(0)
+
+    def replace(self, failed_model: str) -> str:
+        """Remove failed_model and return a different one. Raises RuntimeError if empty."""
+        with self._lock:
+            if failed_model in self._models:
+                self._models.remove(failed_model)
+            if not self._models:
+                raise RuntimeError("Model pool exhausted — all models returned 403")
+            return self._models.pop(0)
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._models)
+
+
 @dataclass
 class ExperimentConfig:
     """Complete experiment configuration."""
@@ -49,6 +83,7 @@ class ExperimentConfig:
     providers: list[ProviderConfig] = field(default_factory=list)
     debate_params: DebateParams = field(default_factory=DebateParams)
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
+    pools: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +161,12 @@ def load_config(yaml_path: str) -> ExperimentConfig:
     debate_params = _parse_debate_params(raw.get("debate_params"))
     dataset = _parse_dataset(raw.get("dataset"))
 
+    # Parse model pools
+    pools: dict[str, ModelPool] = {}
+    raw_pools = raw.get("model_pool", {}) or {}
+    for pool_name, model_list in raw_pools.items():
+        pools[pool_name] = ModelPool(model_list)
+
     config = ExperimentConfig(
         name=name,
         N=N,
@@ -134,6 +175,7 @@ def load_config(yaml_path: str) -> ExperimentConfig:
         providers=providers,
         debate_params=debate_params,
         dataset=dataset,
+        pools=pools,
     )
 
     validate_config(config)
@@ -181,3 +223,22 @@ def validate_config(config: ExperimentConfig) -> None:
                 f"check .env file and ${'{' + p.name.upper().replace('-','_') + '_API_KEY}'} "
                 f"placeholder"
             )
+
+    # Validate pool sizes
+    if config.pools:
+        pool_usage: dict[str, int] = {}
+        for p in config.providers:
+            if p.model.startswith("pool:"):
+                pool_name = p.model.split(":", 1)[1]
+                pool_usage[pool_name] = pool_usage.get(pool_name, 0) + 1
+
+        for pool_name, count in pool_usage.items():
+            pool = config.pools.get(pool_name)
+            if pool is None:
+                raise ConfigError(
+                    f"Provider references pool '{pool_name}' but no such pool defined"
+                )
+            if count > len(pool):
+                raise ConfigError(
+                    f"Pool '{pool_name}' has {len(pool)} models but {count} agents need one each"
+                )
