@@ -3,7 +3,7 @@
 from openai import OpenAI
 
 from .base import BaseLLMProvider, DEFAULT_TIMEOUT
-from ..config import ModelPool
+from ..config import PoolInstance
 
 
 class OpenAIProvider(BaseLLMProvider):
@@ -17,10 +17,10 @@ class OpenAIProvider(BaseLLMProvider):
         model: str,
         api_key: str,
         base_url: str = "",
-        model_pool: "ModelPool | None" = None,
+        pool_instance: "PoolInstance | None" = None,
     ):
         self._model = model
-        self._model_pool = model_pool
+        self._pool_instance = pool_instance
         self._api_key = api_key
         self._base_url = base_url or None
         client_kwargs = {"api_key": api_key}
@@ -39,8 +39,7 @@ class OpenAIProvider(BaseLLMProvider):
         ]
         temperature = kwargs.get("temperature", 0.7)
 
-        max_retries = len(self._model_pool) if self._model_pool else 0
-        for _ in range(max_retries + 1):
+        while True:
             try:
                 response = self._client.chat.completions.create(
                     model=self._model,
@@ -49,9 +48,9 @@ class OpenAIProvider(BaseLLMProvider):
                 )
                 return response.choices[0].message.content or ""
             except Exception as e:
-                if self._is_quota_exhausted(e) and self._model_pool:
+                if self._is_quota_exhausted(e) and self._pool_instance:
                     try:
-                        self._model = self._model_pool.replace(self._model)
+                        self._model = self._pool_instance.replace(self._model)
                         self._client = OpenAI(
                             api_key=self._api_key,
                             base_url=self._base_url or "",
