@@ -2,7 +2,12 @@
 
 from openai import OpenAI
 
+from typing import TYPE_CHECKING
+
 from .base import BaseLLMProvider, DEFAULT_TIMEOUT
+
+if TYPE_CHECKING:
+    from ..config import ModelPool
 
 
 class OpenAIProvider(BaseLLMProvider):
@@ -11,8 +16,15 @@ class OpenAIProvider(BaseLLMProvider):
     Works with: OpenAI, DeepSeek, vLLM, Ollama, etc.
     """
 
-    def __init__(self, model: str, api_key: str, base_url: str = ""):
+    def __init__(
+        self,
+        model: str,
+        api_key: str,
+        base_url: str = "",
+        model_pool: "ModelPool | None" = None,
+    ):
         self._model = model
+        self._model_pool = model_pool
         client_kwargs = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url

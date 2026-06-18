@@ -34,7 +34,7 @@ def run_single_problem(
     # Create agents with their providers
     agents = []
     for i, pcfg in enumerate(config.providers):
-        provider = create_provider(pcfg)
+        provider = create_provider(pcfg, pools=config.pools)
         agent = Agent(id=i, provider=provider)
         agents.append(agent)
 
