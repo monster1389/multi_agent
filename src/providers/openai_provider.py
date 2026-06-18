@@ -2,12 +2,8 @@
 
 from openai import OpenAI
 
-from typing import TYPE_CHECKING
-
 from .base import BaseLLMProvider, DEFAULT_TIMEOUT
-
-if TYPE_CHECKING:
-    from ..config import ModelPool
+from ..config import ModelPool
 
 
 class OpenAIProvider(BaseLLMProvider):
@@ -25,6 +21,7 @@ class OpenAIProvider(BaseLLMProvider):
     ):
         self._model = model
         self._model_pool = model_pool
+        self._base_url = base_url
         client_kwargs = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url
@@ -40,9 +37,40 @@ class OpenAIProvider(BaseLLMProvider):
             {"role": "user", "content": user_prompt},
         ]
         temperature = kwargs.get("temperature", 0.7)
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,
-            temperature=temperature,
-        )
-        return response.choices[0].message.content or ""
+
+        max_retries = len(self._model_pool) if self._model_pool else 0
+        for attempt in range(max_retries + 1):
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._model,
+                    messages=messages,
+                    temperature=temperature,
+                )
+                return response.choices[0].message.content or ""
+            except Exception as e:
+                if self._is_quota_exhausted(e) and self._model_pool:
+                    try:
+                        self._model = self._model_pool.replace(self._model)
+                        self._client = OpenAI(
+                            api_key=self._client.api_key,
+                            base_url=self._base_url,
+                            timeout=DEFAULT_TIMEOUT,
+                        )
+                    except RuntimeError:
+                        raise RuntimeError(
+                            f"All models in pool exhausted after {self._model} returned 403"
+                        ) from e
+                raise
+
+    def _is_quota_exhausted(self, exc: Exception) -> bool:
+        """Check if exception indicates quota exhaustion (403)."""
+        status_code = getattr(exc, "status_code", None)
+        if status_code == 403:
+            return True
+        msg = str(exc).lower()
+        return (
+            "quota" in msg
+            or "insufficient" in msg
+            or "exhausted" in msg
+            or "limit" in msg
+        ) and "403" in msg
