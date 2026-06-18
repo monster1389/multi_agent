@@ -60,7 +60,7 @@ class ModelPool:
             return self._models.pop(0)
 
     def replace(self, failed_model: str) -> str:
-        """Remove failed_model and return a different one. Raises RuntimeError if empty."""
+        """Remove failed_model if still in pool, then return the next available model."""
         with self._lock:
             if failed_model in self._models:
                 self._models.remove(failed_model)
@@ -83,7 +83,7 @@ class ExperimentConfig:
     providers: list[ProviderConfig] = field(default_factory=list)
     debate_params: DebateParams = field(default_factory=DebateParams)
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
-    pools: dict = field(default_factory=dict)
+    pools: dict[str, "ModelPool"] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +165,10 @@ def load_config(yaml_path: str) -> ExperimentConfig:
     pools: dict[str, ModelPool] = {}
     raw_pools = raw.get("model_pool", {}) or {}
     for pool_name, model_list in raw_pools.items():
+        if not isinstance(model_list, list):
+            raise ConfigError(
+                f"model_pool.{pool_name} must be a list of model names, got {type(model_list).__name__}"
+            )
         pools[pool_name] = ModelPool(model_list)
 
     config = ExperimentConfig(
